@@ -1,36 +1,16 @@
-## ADAPTED FROM https://github.com/comrob/AcceleratedDubins.jl
-
-"""BSD 2-Clause License
-
-Copyright (c) 2020, Computational Robotics Laboratory 
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
-
 module AcceleratedDubins
+
+using Optim
+
+export
+    path_len, path_time, sample_path, speed_by_radius, speed_profile, fastest_path, retrieve_path, optimized_path, 
+    possible_tuples, radii_samples_lin, radii_samples_exp, get_configuration
+
 
 ###############################################################################
 ############################ TYPE DEFINITIONS #################################
 ###############################################################################
+
 
 @enum DubinsPathTypeR2 LSL LSR RSL RSR
 @enum SegmentType L_SEG S_SEG R_SEG
@@ -66,6 +46,28 @@ DubinsPathR2() = DubinsPathR2(zeros(3), zeros(3), [1, Inf, 1], LSL)
 ###############################################################################
 ########################### HELPER FUNCTIONS ##################################
 ###############################################################################
+
+"""
+    radii_samples_lin(r_min::Float64, r_max::Float64, num_samples::Int64, precision::Int64=100)
+Calculate radii samples with linear spacing.
+...
+# Arguments
+- `r_min::Float64`: minimum turning radius
+- `r_max::Float64`: maximum turning radius
+- `num_samples::Int64`: number of samples
+...
+return - samples::Vector{Float64}
+
+See also: [`radii_samples_exp`](@ref)
+"""
+function radii_samples_lin(r_min::Float64, r_max::Float64, num_samples::Int64, precision::Int64=100)
+    if precision == 100 # 16 should be reasonable maximum precision for Float64
+                        # thus the default precision for rounding is this high
+        return collect(r_min:(r_max-r_min)/(num_samples-1):r_max)
+    end
+    return [round(i, digits=precision) for i in r_min:(r_max-r_min)/(num_samples-1):r_max]
+end
+
 """
     radii_samples_exp(r_min::Float64, r_max::Float64, num_samples::Int64, precision::Int64=100)
 Calculate radii samples with exponential spacing.
@@ -87,13 +89,17 @@ function radii_samples_exp(r_min::Float64, r_max::Float64, num_samples::Int64, p
     return [round(exp(i), digits=precision) for i in log(r_min):(log(r_max) - log(r_min))/(num_samples-1):log(r_max)]
 end
 
+
+
+
 " Compute DubinsR2 path length. Argument: `path::DubinsPathR2, return: `len::Float64`"
 function path_len(path)
     return (path === nothing) ? Inf : sum(path.lengths)
 end
 
+
 """
-    is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64, params, speeds)
+    is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64, params)
 
 Comparing function to use between two maneuvres.
 ...
@@ -102,11 +108,10 @@ Comparing function to use between two maneuvres.
 - `radii::Vector{Float64}`: vector of segment radii
 - `best_time::Float64`: time to compare with
 - `params::Vector{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
-- `speeds::Vector{Float64}` : Vector of speed values: [starting velocity, ending velocity]
 ...
 return - ans::Boolean, time::Float64
 """
-function is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64, params, speeds)
+function is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64, params)
     if path_lengths === nothing
         return false, nothing
     end
@@ -114,12 +119,30 @@ function is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64
     path.type = LSL # for time computing, only posible maneuvres currently are CSC
     path.lengths = path_lengths
     path.r = radii
-    time = path_time(path, params, speeds)
+    time = path_time(path, params)
     if time < best_time
         return true, time
     end
     return false, time
 end
+
+
+"""
+    speed_by_radius(radius::Number, vr::Number, vs::Number)
+Caculation using plane turn
+
+# Arguments
+- `radius::Number`: Radius to get speed for
+- `vr::Number`: Maximum vehicle speed on radius 1
+- `vs::Number`: Maximum vehicle speed on straight segment
+
+# Return
+- `v::Float64`: Maximum speed for input radius
+"""
+## this version works only for normalized, delete if unused
+# function speed_by_radius(radius::Number, vr::Number, vs::Number)
+#    return min(sqrt(radius)*vr, vs)
+#end
 
 """
     speed_by_radius(radius::Number)
@@ -137,22 +160,21 @@ function speed_by_radius(radius::Number)
 end
 
 """
-    path_time(path::DubinsPathR2, params::Vector{Number}, speeds::Vector{Float64})
+    path_time(path::DubinsPathR2, params::Vector{Number})
 Get path time of single path.
 
 # Arguments
 - `path::DubinsPathR2`: Path to compute time from
 - `params::Vector{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
-- `speeds::Vector{Float64}` : Vector of speed values: [starting velocity, ending velocity]
 
 # Return
 - `time::Float64`: Path time
 """
-function path_time(path::DubinsPathR2, params::Vector{Float64}, speeds::Vector{Float64})
+function path_time(path::DubinsPathR2, params::Vector{Float64})
     if path === nothing
         return Inf
     end
-    t, _ = speed_profile(path, params[1], params[2], params[3], params[4], speeds[1], speeds[2])
+    t, _ = speed_profile(path, params[1], params[2], params[3], params[4])
     return t[end]
 end
 
@@ -173,28 +195,6 @@ function point_by_angle(origin::Vector{Float64}, ang::Number, len::Number)
     y2 = y + len * sin(ang)
     x2 = x + len * cos(ang)
     return [x2, y2]
-end
-
-"""
-    rotate_points(start::Vector{Float64}, stop::Vector{Float64})
-Rotate given input points to format start -> [0, 0, alfa], stop -> [dist, 0, beta]
-
-# Arguments
-- `start::Vector{Float64}`: start point of the vehicle, [x1, y1, theta1]
-- `stop::Vector{Float64}`: final point of the vehicle, [x2, y2, theta2]
-
-# Return
-- `alfa::Float64`: new starting angle
-- `beta::Float64`: new ending angle
-- `dist::Float64`: distance between start and stopex
-"""
-function rotate_points(start::Vector{Float64}, stop::Vector{Float64})
-    diff = stop-start
-    global_rotation = atan(diff[2], diff[1])
-    alfa = start[3] - global_rotation
-    beta = stop[3] - global_rotation
-    dist = sqrt(diff[1]^2 + diff[2]^2)
-    return alfa, beta, dist
 end
 
 """
@@ -220,11 +220,62 @@ function possible_tuples(radii::Vector{Float64})
     return tup
 end
 
+"""
+    rotate_points(start::Vector{Float64}, stop::Vector{Float64})
+Rotate given input points to format start -> [0, 0, alfa], stop -> [dist, 0, beta]
+
+# Arguments
+- `start::Vector{Float64}`: start point of the vehicle, [x1, y1, theta1]
+- `stop::Vector{Float64}`: final point of the vehicle, [x2, y2, theta2]
+
+# Return
+- `alfa::Float64`: new starting angle
+- `beta::Float64`: new ending angle
+- `dist::Float64`: distance between start and stopex
+"""
+function rotate_points(start::Vector{Float64}, stop::Vector{Float64})
+    diff = stop-start
+    global_rotation = atan(diff[2], diff[1])
+    alfa = start[3] - global_rotation
+    beta = stop[3] - global_rotation
+    dist = sqrt(diff[1]^2 + diff[2]^2)
+    return alfa, beta, dist
+end
+
+
 ###############################################################################
 ######################### MAIN PATH FUNCTIONS #################################
 ###############################################################################
+
 """
-    fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64}, speeds::Array{Float64})
+    retrieve_path(start::Float64, stop::Float64, r1::Float64, r2::Float64, params::Vector{Float64})
+Function to return best DubinsR2 path with first and second radius as specified.
+
+# Arguments
+- `start::Vector{Float64}`: starting angle in radians from point [0, 0]
+- `stop::Vector{Float64}`: starting angle in radians from point [0, 0]
+- `radii::Vector{Float64}`: [radius of starting arc, radius of ending arc], must be of length 2
+- `params::Array{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
+
+# Return
+- `path::DubinsPathR2`: fastest DubinsR2 path
+- `err::const`: error code of the path calculation
+"""
+function retrieve_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Vector{Float64})
+    @assert length(radii) == 2
+    alfa, beta, dist = rotate_points(start, stop)
+
+    path, err = best_maneuver(alfa, beta, dist, radii[1], radii[2], params)
+
+    if (err == PATH_ERROR)
+        return nothing, PATH_ERROR
+    end
+    path.origin = start
+    return path, PATH_OK
+end
+
+"""
+    fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64})
 based on the input radii, tests each combination and select best DubinsR2 path.
 
 # Arguments
@@ -232,13 +283,12 @@ based on the input radii, tests each combination and select best DubinsR2 path.
 - `stop::Vector{Float64}`: starting angle in radians from point [0, 0]
 - `radii::Vector{Float64}`: radius of starting arc
 - `params::Array{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
-- `speeds::Vector{Float64}` : Vector of speed values: [starting velocity, ending velocity]
 
 # Return
 - `path::DubinsPathR2`: fastest DubinsR2 path
 - `err::const`: error code of the path calculation
 """
-function fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64}, speeds::Array{Float64})
+function fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64})
     alfa, beta, dist = rotate_points(start, stop)
 
     # get all possible combinations
@@ -249,11 +299,8 @@ function fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vect
     best_path = nothing
     ret_err = PATH_ERROR
     for pair in radii_pairs
-        path, err = best_maneuver(alfa, beta, dist, pair[1], pair[2], params, speeds)
-        if path === nothing
-            continue
-        end
-        time = path_time(path, params, speeds)
+        path, err = best_maneuver(alfa, beta, dist, pair[1], pair[2], params)
+        time = path_time(path, params)
         if time < best_time || (isapprox(time, best_time, atol=1e-8) && path_len(path) < best_len)
             best_time = time
             best_len = path_len(path)
@@ -262,15 +309,70 @@ function fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vect
         end
     end
 
-    if best_path !== nothing
-        best_path.origin = start
-    end
+    best_path.origin = start
     return best_path, ret_err
 end
 
 
 """
-    best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64, r2::Float64, params::Array{Float64}, speeds::Array{Float64}))
+    optimized_path(start::Vector{Float64}, stop::Vector{Float64}, r_min::Float64, r_max::Float64, params::Array{Float64})
+based on the input radii, tests each combination and select best DubinsR2 path.
+
+# Arguments
+- `start::Vector{Float64}`: starting angle in radians from point [0, 0]
+- `stop::Vector{Float64}`: starting angle in radians from point [0, 0]
+- `radii::Vector{Float64}`: vector containing minimum and maximum vehicle radius
+- `params::Array{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
+
+# Return
+- `path::DubinsPathR2`: fastest DubinsR2 path
+- `err::const`: error code of the path calculation
+"""
+function optimized_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64})
+    alfa, beta, dist = rotate_points(start, stop)
+    r_min = minimum(radii)
+    r_max = maximum(radii)
+
+    function optim_radii(v)
+        path, _ = best_maneuver(alfa, beta, dist, v[1], v[2], params)
+        return path_time(path, params)
+    end
+
+    v = [0.5*(r_min+r_max) for i in 1:2]
+    
+    v2 = [r_min+1e-12 for i in 1:2]
+    lb = [r_min for i in 1:2] # lowerbound vector, smaller than v,
+                                    # otherwise Optim would set it between ub and lb
+    ub = [r_max for i in 1:2] # upperbound vector
+
+    max_iter= Int(10e5)
+   
+    res1 = optimize(optim_radii, lb, ub, v, SAMIN(verbosity=0)) # returns the best path
+    res2 = optimize(optim_radii, lb, ub, v2, SAMIN(verbosity=0)) # returns the best path
+
+    result = res2
+    if Optim.minimum(res1) < Optim.minimum(res2)
+        result = res1
+    end
+
+    if Optim.minimum(result) == Inf
+        return nothing, PATH_ERROR
+    end
+
+    best_r = Optim.minimizer(result) # get the optimal value
+    @assert best_r[1] <= r_max
+    @assert best_r[1] >= r_min
+    @assert best_r[2] <= r_max
+    @assert best_r[2] >= r_min
+    path, err = best_maneuver(alfa, beta, dist, best_r[1], best_r[2], params)
+
+    path.origin = start
+    return path, err
+end
+
+
+"""
+    best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64, r2::Float64, params::Array{Float64})
 Function to return best DubinsR2 path according to is_path_better argument
 
 # Arguments
@@ -280,13 +382,12 @@ Function to return best DubinsR2 path according to is_path_better argument
 - `r1::Float64`: radius of starting arc
 - `r2::Float64`: radius of ending arc
 - `params::Array{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
-- `speeds::Vector{Float64}` : Vector of speed values: [starting velocity, ending velocity]
 
 # Return
 - `path::DubinsPathR2`: path 
 - `err`: result of operation
 """
-function best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64, r2::Float64, params::Array{Float64}, speeds::Array{Float64})
+function best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64, r2::Float64, params::Array{Float64})
     path = DubinsPathR2()
     path.origin = [0, 0, alfa]
     best = Inf
@@ -302,25 +403,25 @@ function best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64,
     end
 
     _, path_lengths = RSR_path(alfa, beta, dist, r1, r2)
-    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params, speeds)
+    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params)
     if ans
         pset(path_lengths, calc, r1, Inf, r2, 3)
     end
 
     _, path_lengths = LSL_path(alfa, beta, dist, r1, r2)
-    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params, speeds)
+    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params)
     if ans
         pset(path_lengths, calc, r1, Inf, r2, 0)
     end
 
     _, path_lengths = RSL_path(alfa, beta, dist, r1, r2)
-    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params, speeds)
+    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params)
     if ans
         pset(path_lengths, calc, r1, Inf, r2, 2)
     end
 
     _, path_lengths = LSR_path(alfa, beta, dist, r1, r2)
-    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params, speeds)
+    ans, calc = is_path_faster(path_lengths, [r1, Inf, r2], best, params)
     if ans
         pset(path_lengths, calc, r1, Inf, r2, 1)
     end
@@ -625,29 +726,24 @@ end
 ###############################################################################
 
 """
-    speed_profile(final_path::Vector{DubinsPathR2}, params::Vector{Number}, speeds::Vector{Float64})
+    speed_profile(final_path::Vector{DubinsPathR2}, params::Vector{Number})
 Sample single path for plotting
 
 # Arguments
 - `final_path::DubinsPathR2`: Vector of dubins paths
 - `params::Vector{Float64}`: Vector of speed parameters: [velocity in minimal radius, maximal vehicle velocity, acceleration, deceleration]
-- `speeds::Vector{Float64}` : Vector of speed values: [starting velocity, ending velocity]
 
 # Return
 - `times::Vector{Float64}`: times when the speed changes; Inf if invalid path
 - `speed_at_time::Vector{Float64}`: speed at each time; Inf if invalid path
 """
-function speed_profile(path::DubinsPathR2, params::Vector{Float64}, speeds::Vector{Float64})
-    speed_profile(path, params[1], params[2], params[3], params[4], speeds[1], speeds[2])
+function speed_profile(path::DubinsPathR2, params::Vector{Float64})
+    speed_profile(path, params[1], params[2], params[3], params[4])
 end
 
-function speed_profile(path::DubinsPathR2, v_min::Number, v_max::Number, a1::Float64, a2::Float64, v_i::Number, v_f::Number)
+function speed_profile(path::DubinsPathR2, v_min::Number, v_max::Number, a1::Float64, a2::Float64)
     # a1 = a_max, a2 = -a_min
-    speeds = [v_i, speed_by_radius(path.r[2]), v_f]
-    #Check if starting/ending speed is too high to make a turn of that radius
-    if speed_by_radius(path.r[1]) < v_i || speed_by_radius(path.r[3]) < v_f
-        return Inf, Inf
-    end
+    speeds = [min(v_max, speed_by_radius(r)) for r in path.r]
     lengths = path.lengths
 
     times::Vector{Float64} = []
@@ -808,5 +904,6 @@ function speed_profile(path::DubinsPathR2, v_min::Number, v_max::Number, a1::Flo
     end
     return times, speed_at_time
 end
+
 
 end

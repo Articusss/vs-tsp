@@ -4,5 +4,6 @@ authors = ["Vinicius Faria <artixsproductions@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+IterTools = "c8e1da08-722c-5040-9ed9-7db0dc04731e"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
