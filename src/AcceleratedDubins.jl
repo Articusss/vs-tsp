@@ -93,7 +93,7 @@ function path_len(path)
 end
 
 """
-    is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64, params)
+    is_path_faster(path_lengths, radii::Vector{Float64}, best_time::Float64, params, speeds)
 
 Comparing function to use between two maneuvres.
 ...
@@ -137,7 +137,7 @@ function speed_by_radius(radius::Number)
 end
 
 """
-    path_time(path::DubinsPathR2, params::Vector{Number})
+    path_time(path::DubinsPathR2, params::Vector{Number}, speeds::Vector{Float64})
 Get path time of single path.
 
 # Arguments
@@ -224,7 +224,7 @@ end
 ######################### MAIN PATH FUNCTIONS #################################
 ###############################################################################
 """
-    fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64})
+    fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vector{Float64}, params::Array{Float64}, speeds::Array{Float64})
 based on the input radii, tests each combination and select best DubinsR2 path.
 
 # Arguments
@@ -270,7 +270,7 @@ end
 
 
 """
-    best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64, r2::Float64, params::Array{Float64})
+    best_maneuver(alfa::Float64, beta::Float64, dist::Float64, r1::Float64, r2::Float64, params::Array{Float64}, speeds::Array{Float64}))
 Function to return best DubinsR2 path according to is_path_better argument
 
 # Arguments
@@ -625,7 +625,7 @@ end
 ###############################################################################
 
 """
-    speed_profile(final_path::Vector{DubinsPathR2}, params::Vector{Number})
+    speed_profile(final_path::Vector{DubinsPathR2}, params::Vector{Number}, speeds::Vector{Float64})
 Sample single path for plotting
 
 # Arguments

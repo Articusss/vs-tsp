@@ -2,5 +2,5 @@
 Implementation of the Variable-Speed Travelling Salesman Problem
 
 ## Todo
-- [ ] Adapt `AcceleratedDubins.jl` to use real formula (not using minimum curvature at the moment)
-- [ ] Update documentation in `AcceleratedDubins.jl`
+- [ ] Adapt `speed_by_radius` on `AcceleratedDubins.jl` to include k (curvature of the trajectory)
+- [x] Update documentation in `AcceleratedDubins.jl`
