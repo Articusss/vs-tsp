@@ -1,0 +1,8 @@
+name = "VsTsp"
+uuid = "af4abf16-b9bc-4470-9eeb-80dd8de2958c"
+authors = ["Vinicius Faria <artixsproductions@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
