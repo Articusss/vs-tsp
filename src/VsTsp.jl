@@ -1,9 +1,9 @@
 module VsTsp
-    import PyPlot as plt
+    #import PyPlot as plt
     import IterTools as itr
     using Random
     include("AcceleratedDubins.jl")
-    include("Visual.jl")
+    #include("Visual.jl")
     include("Helper.jl")
 
     struct VehicleParameters
@@ -32,7 +32,7 @@ module VsTsp
         params = VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
         num_speeds = 4
 
-        return compute_trajectories(points[1:3], params, num_speeds)
+        return compute_trajectories(points, params, num_speeds)
     end
 
     function compute_trajectories(locations::Array{Tuple{Float64, Float64}, 1}, parameters::VehicleParameters, num_speeds::Int64, num_headings::Int64 = 8, radii_samples::Int64 = 8)
@@ -137,14 +137,42 @@ module VsTsp
         return best
     end
 
-    function initialization(graph::Array{Float64,6})
-        #Insert the first 3 locations randomly
-        sequence::Vector{Int64} = shuffle(collect(1:3))
-        #Vector corresponding to (heading angle, speed)
-        configurations::Vector{Tuple{Int64, Int64}}
+    function cheapest_insertion(graph::Array{Float64,6})
+        #Cheapest insertion algorithm
+        num_headings = size(graph,5)
+        num_speeds = size(graph, 3)
+        
+        #TODO follow standard cheapest insertion and start with vertex with lowest time?
+        #Connect first two points in the best configuration possible
+        best_starting, best_ending = Helper.find_lowest_edge(graph, 1, 2, num_headings, num_speeds)
+        to_add = Set{Int64}(3:size(graph,1))
 
+        #Vector corresponding to (point, heading angle, speed) of each point in the sequence
+        full_path::Vector{Tuple{Int64, Int64, Int64}} = [best_starting, best_ending]
 
-        return sequence
+        while !isempty(to_add)
+            best_configuration::Tuple{Int64, Int64, Int64} = (-1, -1, -1)
+            best_time = Inf
+            best_position::Int64 = -1
+
+            #Find cheapest insertion -> Try to insert each node between every point in solution, select the best position and insert
+            for candidate in to_add
+                for pos in eachindex(full_path)
+                    configuration, time = Helper.find_lowest_edge_between(graph, full_path[pos], full_path[pos == length(full_path) ? 1 : pos + 1], candidate, num_headings, num_speeds)
+                    if time < best_time
+                        best_time = time
+                        best_position = pos
+                        best_configuration = configuration
+                    end
+                end
+            end
+
+            #Insert best insertion
+            delete!(to_add, best_configuration[1])
+            insert!(full_path, best_position + 1, best_configuration)
+        end
+
+        return full_path
     end
 
 end # module VsTsp
