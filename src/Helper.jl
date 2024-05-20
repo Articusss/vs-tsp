@@ -39,17 +39,18 @@ module Helper
         best_starting::Tuple{Int64, Int64, Int64} = (starting, -1, -1)
         best_ending::Tuple{Int64, Int64, Int64} = (ending, -1, -1)
 
-        for (starting_speed, ending_speed) in itr.product(1:num_speeds, 1:num_speeds)
-            for (starting_heading, ending_heading) in itr.product(1:num_headings, 1:num_headings) 
-                if graph[starting, ending, starting_speed, ending_speed, starting_heading, ending_heading] < best
-                    best = graph[starting, ending, starting_speed, ending_speed, starting_heading, ending_heading]
-                    best_starting = (starting, starting_speed, starting_heading)
-                    best_ending = (ending, ending_speed, ending_heading)
+        for (v_i, v_f) in itr.product(1:num_speeds, 1:num_speeds)
+            for (h_i, h_f) in itr.product(1:num_headings, 1:num_headings)
+                total_time = graph[starting, ending, v_i, v_f, h_i, h_f] + graph[ending, starting, v_f, v_i, h_f, h_i]
+                if total_time < best
+                    best = total_time
+                    best_starting = (starting, v_i, h_i)
+                    best_ending = (ending, v_f, h_f)
                 end
             end
         end
 
-        return best_starting, best_ending
+        return best_starting, best_ending, best
     end
 
     function find_lowest_edge_between(graph::Array{Float64}, starting::Tuple{Int64, Int64, Int64}, ending::Tuple{Int64, Int64, Int64}, middle::Int64, num_headings::Int64, num_speeds::Int64)
@@ -75,19 +76,36 @@ module Helper
     function retrieve_path(locations::Vector{Tuple{Float64, Float64}}, configurations::Vector{Tuple{Int64, Int64, Int64}}, parameters, speeds::Vector{Float64}, headings::Vector{Float64}, radii::Vector{Float64})
         #(dubinspath, starting_speed, ending_speed)
         full_path::Vector{Tuple{AcceleratedDubins.DubinsPathR2, Float64, Float64}} = []
+        total_time = 0
         params = [parameters.v_min, parameters.v_max, parameters.a_max, -parameters.a_min]
 
         for i in eachindex(configurations)
             next = i == length(configurations) ? 1 : i + 1
 
-            starting::Vector{Float64} = [locations[configurations[i][1]][1], locations[configurations[i][1]][2], headings[configurations[i][3]]]
-            ending::Vector{Float64} = [locations[configurations[next][1]][1], locations[configurations[next][1]][2], headings[configurations[next][3]]]
+            n_i, v_i, h_i = configurations[i]
+            n_f, v_f, h_f = configurations[next]
 
-            path, _ = AcceleratedDubins.fastest_path(starting, ending, radii, params, [speeds[configurations[i][2]], speeds[configurations[next][2]]])
+            starting::Vector{Float64} = [locations[n_i][1], locations[n_i][2], headings[h_i]]
+            ending::Vector{Float64} = [locations[n_f][1], locations[n_f][2], headings[h_f]]
+
+            path, time, _ = AcceleratedDubins.fastest_path(starting, ending, radii, params, [speeds[v_i], speeds[v_f]])
 
             push!(full_path, (path, speeds[configurations[i][2]], speeds[configurations[next][2]]))
+            total_time += time
         end
 
-        return full_path
+        return full_path, total_time
     end
+
+    function configuration_time(graph::Array{Float64,6}, configurations::Vector{Tuple{Int64, Int64, Int64}})
+        total_time = 0
+        for i in eachindex(configurations)
+            next = i == length(configurations) ? 1 : i + 1
+            n_i, v_i, h_i = configurations[i]
+            n_f, v_f, h_f = configurations[next]
+            total_time += graph[n_i, n_f, v_i, v_f, h_i, h_f]
+        end
+        return total_time
+    end
+
 end

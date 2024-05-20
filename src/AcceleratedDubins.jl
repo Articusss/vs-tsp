@@ -265,7 +265,7 @@ function fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vect
     if best_path !== nothing
         best_path.origin = start
     end
-    return best_path, ret_err
+    return best_path, best_time, ret_err
 end
 
 
