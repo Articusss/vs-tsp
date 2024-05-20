@@ -1,9 +1,8 @@
 module VsTsp
-    #import PyPlot as plt
     import IterTools as itr
     using Random
     include("AcceleratedDubins.jl")
-    #include("Visual.jl")
+    include("Visual.jl")
     include("Helper.jl")
 
     struct VehicleParameters
@@ -35,13 +34,19 @@ module VsTsp
         return compute_trajectories(points, params, num_speeds)
     end
 
+    function get_params()
+        return VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
+    end
+
+    #TODO not calculate matrix diagonals (distance from the point to itself) can speed up
     function compute_trajectories(locations::Array{Tuple{Float64, Float64}, 1}, parameters::VehicleParameters, num_speeds::Int64, num_headings::Int64 = 8, radii_samples::Int64 = 8)
         #Build a 6-dimensional graph (starting node, ending node, starting speed, ending speed, starting heading angle, ending heading angle)
         num_locations = length(locations)
         graph::Array{Float64, 6} = fill(-1, (num_locations, num_locations, num_speeds, num_speeds, num_headings, num_headings))
 
         #Split heading angles and speeds according to their numbers
-        speeds = collect(range(parameters.v_min, parameters.v_max, num_speeds))
+        #NOTE - USING MAX SPEED OF R_MAX, otherwise all maximum speeds will be invalid
+        speeds = collect(range(parameters.v_min, AcceleratedDubins.speed_by_radius(parameters.v_max), num_speeds))
         headings = collect(range(0, 2 * pi, num_headings))
 
         radii = AcceleratedDubins.radii_samples_exp(parameters.r_min, parameters.r_max, radii_samples)
@@ -72,7 +77,7 @@ module VsTsp
             end
         end
 
-        return graph
+        return graph, speeds, headings, radii
     end
 
     function shortest_time_by_sequence(graph::Array{Float64, 6}, sequence::Vector{Int64})
