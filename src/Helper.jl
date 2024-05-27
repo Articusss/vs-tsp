@@ -146,6 +146,66 @@ module Helper
         return total_time
     end
 
+    function shortest_time_by_sequence(graph::Array{Float64, 6}, sequence::Vector{Int64})
+        num_headings = size(graph,5)
+        num_speeds = size(graph, 3)
+
+        best = Inf
+    
+        #All possible starting speed/heading angles
+        for (speed_start, heading_start) in itr.product(1:num_speeds, 1:num_headings)
+            
+            #Holds best path of arbitrary position considering (speed, headingAngle)
+            prev::Array{Tuple{Float64, Bool}, 2} = [(graph[sequence[1], sequence[2], speed_start, i, heading_start, j], false) for i in 1:num_speeds, j in 1:num_headings]
+            curr::Array{Tuple{Float64, Bool}, 2} = fill((0., false), (num_speeds, num_headings))
+
+            #Validates value, to remove necessity of creating new matrix everytime this runs
+            valid = true
+            local_best_time = Inf
+
+            #Update best path for pos + 1, starting from second position
+            for pos in 2:(length(sequence)-1)
+                curr_node = sequence[pos + 1]
+                prev_node = sequence[pos]
+                for (prev_speed, curr_speed) in itr.product(1:num_speeds, 1:num_speeds)
+                    for (prev_heading, curr_heading) in itr.product(1:num_headings, 1:num_headings)
+                        #Not valid, assign first value for future comparisons
+                        if curr[curr_speed, curr_heading][2] != valid
+                            curr[curr_speed, curr_heading] = (prev[prev_speed,prev_heading][1] + graph[prev_node, curr_node, prev_speed, curr_speed, prev_heading, curr_heading], valid)
+                        else
+                            #Valid, compare with previously calculated value
+                            val = prev[prev_speed,prev_heading][1] + graph[prev_node, curr_node, prev_speed, curr_speed, prev_heading, curr_heading]
+                            if val < curr[curr_speed, curr_heading][1]
+                                curr[curr_speed, curr_heading] = (val, valid)
+                            end
+                        end
+                    end
+                end
+                
+                #Swap, swap validity if necessary
+                curr, prev = prev, curr
+                valid = pos % 2 == 1 ? !valid : valid
+            end
+
+            #Now connect to start again
+            for prev_speed in 1:num_speeds
+                for prev_heading in 1:num_headings
+                    val = prev[prev_speed, prev_heading][1] + graph[sequence[length(sequence)], sequence[1], prev_speed, speed_start, prev_heading, heading_start]
+                    if val < local_best_time
+                        local_best_time = val
+                    end
+                end
+            end
+
+            #Check with global best
+            if local_best_time < best
+                best = local_best_time
+            end
+        end
+
+        return best
+    end
+
     #Same as shortest_time_by_sequence, but returns configuration too
     function shortest_configuration_by_sequence(graph::Array{Float64, 6}, sequence::Vector{Int64})
         num_headings = size(graph,5)

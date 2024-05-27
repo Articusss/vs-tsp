@@ -95,66 +95,6 @@ module VsTsp
         return graph, speeds, headings, radii
     end
 
-    function shortest_time_by_sequence(graph::Array{Float64, 6}, sequence::Vector{Int64})
-        num_headings = size(graph,5)
-        num_speeds = size(graph, 3)
-
-        best = Inf
-    
-        #All possible starting speed/heading angles
-        for (speed_start, heading_start) in itr.product(1:num_speeds, 1:num_headings)
-            
-            #Holds best path of arbitrary position considering (speed, headingAngle)
-            prev::Array{Tuple{Float64, Bool}, 2} = [(graph[sequence[1], sequence[2], speed_start, i, heading_start, j], false) for i in 1:num_speeds, j in 1:num_headings]
-            curr::Array{Tuple{Float64, Bool}, 2} = fill((0., false), (num_speeds, num_headings))
-
-            #Validates value, to remove necessity of creating new matrix everytime this runs
-            valid = true
-            local_best_time = Inf
-
-            #Update best path for pos + 1, starting from second position
-            for pos in 2:(length(sequence)-1)
-                curr_node = sequence[pos + 1]
-                prev_node = sequence[pos]
-                for (prev_speed, curr_speed) in itr.product(1:num_speeds, 1:num_speeds)
-                    for (prev_heading, curr_heading) in itr.product(1:num_headings, 1:num_headings)
-                        #Not valid, assign first value for future comparisons
-                        if curr[curr_speed, curr_heading][2] != valid
-                            curr[curr_speed, curr_heading] = (prev[prev_speed,prev_heading][1] + graph[prev_node, curr_node, prev_speed, curr_speed, prev_heading, curr_heading], valid)
-                        else
-                            #Valid, compare with previously calculated value
-                            val = prev[prev_speed,prev_heading][1] + graph[prev_node, curr_node, prev_speed, curr_speed, prev_heading, curr_heading]
-                            if val < curr[curr_speed, curr_heading][1]
-                                curr[curr_speed, curr_heading] = (val, valid)
-                            end
-                        end
-                    end
-                end
-                
-                #Swap, swap validity if necessary
-                curr, prev = prev, curr
-                valid = pos % 2 == 1 ? !valid : valid
-            end
-
-            #Now connect to start again
-            for prev_speed in 1:num_speeds
-                for prev_heading in 1:num_headings
-                    val = prev[prev_speed, prev_heading][1] + graph[sequence[length(sequence)], sequence[1], prev_speed, speed_start, prev_heading, heading_start]
-                    if val < local_best_time
-                        local_best_time = val
-                    end
-                end
-            end
-
-            #Check with global best
-            if local_best_time < best
-                best = local_best_time
-            end
-        end
-
-        return best
-    end
-
     function cheapest_insertion(graph::Array{Float64,6})
         #Cheapest insertion algorithm
         num_headings = size(graph,5)
@@ -196,8 +136,9 @@ module VsTsp
         return full_path, sequence, total_time
     end
 
+    #BASE VNS -> no fast reject
     function variable_neighborhood_search(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64)
-        best_time = shortest_time_by_sequence(graph, initial_sequence)
+        best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
         best_sequence = deepcopy(initial_sequence)
         len = length(initial_sequence)
         println(best_time)
@@ -205,13 +146,13 @@ module VsTsp
         for i in 1:max_iterations
             #Shake
             local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
-            local_time = shortest_time_by_sequence(graph, local_sequence)
+            local_time = Helper.shortest_time_by_sequence(graph, local_sequence)
 
             #Search
             for j in 1:len^2
                 println((j, local_time))
                 search = Vns.rand([Vns.one_point_move, Vns.open_point_exchange])(deepcopy(local_sequence))
-                search_time = shortest_time_by_sequence(graph, search)
+                search_time = Helper.shortest_time_by_sequence(graph, search)
 
                 if search_time < local_time
                     local_time = search_time
@@ -219,6 +160,40 @@ module VsTsp
                 end
             end
 
+            if local_time < best_time
+                best_time = local_time
+                best_sequence = local_sequence
+            end
+        end
+
+
+        return best_sequence, best_time
+    end
+
+    #VNS with fast reject
+    function variable_neighborhood_search_fast(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64)
+        best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
+        best_sequence = deepcopy(initial_sequence)
+        len = length(initial_sequence)
+        println(best_time)
+        stored = fill(-1., (len,len))
+
+        for i in 1:max_iterations
+            println((i, best_time))
+            #Shake
+            local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
+
+            #Search
+            for j in 1:len^2
+                search = Vns.rand([Vns.one_point_move, Vns.open_point_exchange])(deepcopy(local_sequence))
+
+                if !FastReject.fast_reject(graph, search, local_sequence, 4, stored, best_time)
+                    local_sequence = search
+                end
+            end
+
+            local_time = Helper.shortest_time_by_sequence(graph, local_sequence)
+            println(local_time)
             if local_time < best_time
                 best_time = local_time
                 best_sequence = local_sequence
