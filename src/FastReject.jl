@@ -65,10 +65,16 @@ module FastReject
         return (1. / window_size) * total_sum
     end
 
-    function fast_reject(graph::Array{Float64}, candidate_sequence::Vector{Int64}, original_sequence::Vector{Int64}, num_windows::Int64, stored::Array{Float64, 2}, best_time::Float64, exact_comparison::Bool = false)
+    function fast_reject(graph::Array{Float64}, candidate_sequence::Vector{Int64}, original_sequence::Vector{Int64}, original_costs::Vector{Float64}, num_windows::Int64, stored::Array{Float64, 2}, best_time::Float64, exact_comparison::Bool = false)
         max_window = num_windows
+        candidate_costs::Vector{Float64} = fill(-1., num_windows)
         for i in 1:num_windows
-            if window_cost(graph, candidate_sequence, 2^(i-1), stored) > best_time
+            #Calculate if needed
+            if original_costs[i] == -1
+                original_costs[i] = window_cost(graph, candidate_sequence, 2^(i-1), stored)
+            end
+
+            if original_costs[i] > best_time #Do not use a big window for a non-promising sequence
                 max_window = i
                 break
             end
@@ -79,13 +85,12 @@ module FastReject
                 return Helper.shortest_time_by_sequence(graph, candidate_sequence) > Helper.shortest_time_by_sequence(graph, original_sequence)
             end
 
-            cand_cost = window_cost(graph, candidate_sequence, 2^(j-1), stored)
-            og_cost = window_cost(graph, original_sequence, 2^(j-1), stored)
-            if cand_cost > og_cost
-                return true
+            candidate_costs[j] = window_cost(graph, candidate_sequence, 2^(j-1), stored)
+            if candidate_costs[j] > original_costs[j]
+                return true, candidate_costs
             end
         end
 
-        return false
+        return false, candidate_costs
     end
 end

@@ -171,7 +171,7 @@ module VsTsp
     end
 
     #VNS with fast reject
-    function variable_neighborhood_search_fast(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64)
+    function variable_neighborhood_search_fast(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64, num_windows::Int64)
         best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
         best_sequence = deepcopy(initial_sequence)
         len = length(initial_sequence)
@@ -182,13 +182,16 @@ module VsTsp
             println((i, best_time))
             #Shake
             local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
-
+            local_costs::Vector{Float64} = fill(-1., num_windows)
+            
             #Search
             for j in 1:len^2
                 search = Vns.rand([Vns.one_point_move, Vns.open_point_exchange])(deepcopy(local_sequence))
 
-                if !FastReject.fast_reject(graph, search, local_sequence, 4, stored, best_time)
+                reject, costs = FastReject.fast_reject(graph, search, local_sequence, local_costs, num_windows, stored, best_time)
+                if !reject
                     local_sequence = search
+                    local_costs = costs
                 end
             end
 
