@@ -17,50 +17,25 @@ module VsTsp
         r_max::Float64
     end
 
-    function test(graph, speed, heading, radii)
-        points = Helper.read_tsp_file("./instances/berlin52.tsp")
-        params = VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
+    function get_graph(instance_path::String, params::VehicleParameters, num_speeds::Int64 = 4, num_headings::Int64 = 8, radii_samples::Int64 = 8)
+        points = Helper.read_tsp_file(instance_path)
 
-        config, sequence, base_time = cheapest_insertion(graph)
-        path, path_time = Helper.retrieve_path(points, config, params, speed, heading, radii)
-        calc_time = Helper.configuration_time(graph, config)
-        println((base_time, path_time, calc_time))
-
-        println(shortest_time_by_sequence(graph, sequence))
-
-        #Visual.plot_full_path(points, path)
-        #Visual.plot_full_speeds(path, params)
+        return compute_trajectories(points, params, num_speeds, num_headings, radii_samples)
     end
 
-    function test2(graph, speeds, headings, radii)
-        locations = Helper.read_tsp_file("./instances/berlin52.tsp")
-        parameters = VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
-        params = [parameters.v_min, parameters.v_max, parameters.a_max, -parameters.a_min]
-
-        node_i, node_f = 1,2
-        h_i, h_f = 1,2
-        v_i, v_f = 1,2
-        start::Vector{Float64} = [locations[node_i][1], locations[node_i][2], headings[h_i]]
-        stop::Vector{Float64} = [locations[node_f][1], locations[node_f][2], headings[h_f]]
-        path, time, _ = AcceleratedDubins.fastest_path(start, stop, radii, params, [speeds[v_i], speeds[v_f]])
-        println((time, graph[node_i, node_f, v_i, v_f, h_i, h_f]))
-        println(path.lengths)
-
-        path, time, _ = AcceleratedDubins.fastest_path(stop, start, radii, params, [speeds[v_f], speeds[v_i]])
-        println((time, graph[node_f, node_i, v_f, v_i, h_f, h_i]))
-    
-    end
-
-    function getGraph()
-        points = Helper.read_tsp_file("./instances/berlin52.tsp")
-        params = VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
-        num_speeds = 4
-
-        return compute_trajectories(points, params, num_speeds)
-    end
-
-    function get_params()
+    function get_cessna172_params()
         return VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
+    end
+
+    function vns_tsp(graph::Array{Float64, 6}, instance_path::String, params::VehicleParameters, speeds::Vector{Float64}, headings::Vector{Float64}, radii::Vector{Float64}, max_iterations::Int64 = 2000, num_windows::Int64 = 4, verbose::Bool = false)
+        _, initial_seq, _ = cheapest_insertion(graph)
+        vns_seq, time = variable_neighborhood_search_fast(graph, initial_seq, max_iterations, num_windows, verbose)
+
+        points = Helper.read_tsp_file(instance_path)
+        _, config = Helper.shortest_configuration_by_sequence(graph, vns_seq)
+        path, _ = Helper.retrieve_path(points, config, params, speeds, headings, radii)
+
+        return path, points, config
     end
 
     #TODO not calculate matrix diagonals (distance from the point to itself) can speed up
@@ -137,20 +112,21 @@ module VsTsp
     end
 
     #BASE VNS -> no fast reject
-    function variable_neighborhood_search(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64)
+    function variable_neighborhood_search(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64, verbose::Bool = false)
         best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
         best_sequence = deepcopy(initial_sequence)
         len = length(initial_sequence)
-        println(best_time)
 
         for i in 1:max_iterations
+            if verbose
+                println((i, best_time))
+            end
             #Shake
             local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
             local_time = Helper.shortest_time_by_sequence(graph, local_sequence)
 
             #Search
             for j in 1:len^2
-                println((j, local_time))
                 search = Vns.rand([Vns.one_point_move, Vns.open_point_exchange])(deepcopy(local_sequence))
                 search_time = Helper.shortest_time_by_sequence(graph, search)
 
@@ -171,15 +147,16 @@ module VsTsp
     end
 
     #VNS with fast reject
-    function variable_neighborhood_search_fast(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64, num_windows::Int64)
+    function variable_neighborhood_search_fast(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64, num_windows::Int64, verbose::Bool = false)
         best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
         best_sequence = deepcopy(initial_sequence)
         len = length(initial_sequence)
-        println(best_time)
         stored = fill(-1., (len,len))
 
         for i in 1:max_iterations
-            println((i, best_time))
+            if verbose
+                println((i, best_time))
+            end
             #Shake
             local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
             local_costs::Vector{Float64} = fill(-1., num_windows)
@@ -196,7 +173,6 @@ module VsTsp
             end
 
             local_time = Helper.shortest_time_by_sequence(graph, local_sequence)
-            println(local_time)
             if local_time < best_time
                 best_time = local_time
                 best_sequence = local_sequence
@@ -206,5 +182,4 @@ module VsTsp
 
         return best_sequence, best_time
     end
-
 end # module VsTsp

@@ -82,7 +82,7 @@ module FastReject
 
         for j in 1:max_window
             if exact_comparison && j == max_window
-                return Helper.shortest_time_by_sequence(graph, candidate_sequence) > Helper.shortest_time_by_sequence(graph, original_sequence)
+                return Helper.shortest_time_by_sequence(graph, candidate_sequence) > Helper.shortest_time_by_sequence(graph, original_sequence), candidate_costs
             end
 
             candidate_costs[j] = window_cost(graph, candidate_sequence, 2^(j-1), stored)

@@ -643,7 +643,7 @@ end
 
 function speed_profile(path::DubinsPathR2, v_min::Number, v_max::Number, a1::Float64, a2::Float64, v_i::Number, v_f::Number)
     # a1 = a_max, a2 = -a_min
-    speeds = [v_i, speed_by_radius(path.r[2]), v_f]
+    speeds = [v_i, min(v_max, speed_by_radius(path.r[2])), v_f]
     #Check if starting/ending speed is too high to make a turn of that radius
     if speed_by_radius(path.r[1]) < v_i || speed_by_radius(path.r[3]) < v_f
         return Inf, Inf

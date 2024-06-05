@@ -33,6 +33,7 @@ module Helper
         return coordinates
     end
 
+    #Find shortest tour with 2 nodes
     function find_lowest_2_tour(graph::Array{Float64, 6}, starting::Int64, ending::Int64, num_headings::Int64, num_speeds::Int64)
         best = Inf
 
@@ -53,6 +54,7 @@ module Helper
         return best_starting, best_ending, best
     end
 
+    #Find lowest node addition when adding between two nodes
     function find_lowest_edge_between(graph::Array{Float64}, starting::Tuple{Int64, Int64, Int64}, ending::Tuple{Int64, Int64, Int64}, middle::Int64, num_headings::Int64, num_speeds::Int64)
         best_time = Inf
         best_middle::Tuple{Int64, Int64, Int64} = (middle, -1, -1)
@@ -73,6 +75,7 @@ module Helper
         best_middle, best_time
     end
 
+    #Find lowest edge between two nodes
     function find_lowest_edge(graph::Array{Float64, 6}, starting::Int64, ending::Int64, num_headings::Int64, num_speeds::Int64)
         best = Inf
 
@@ -111,6 +114,7 @@ module Helper
         return best_ending, best_time
     end
 
+    #Get path (DubinsPathR2) vector with configurations vector
     function retrieve_path(locations::Vector{Tuple{Float64, Float64}}, configurations::Vector{Tuple{Int64, Int64, Int64}}, parameters, speeds::Vector{Float64}, headings::Vector{Float64}, radii::Vector{Float64})
         #(dubinspath, starting_speed, ending_speed)
         full_path::Vector{Tuple{AcceleratedDubins.DubinsPathR2, Float64, Float64}} = []
@@ -135,6 +139,7 @@ module Helper
         return full_path, total_time
     end
 
+    #Configuration vector time
     function configuration_time(graph::Array{Float64,6}, configurations::Vector{Tuple{Int64, Int64, Int64}})
         total_time = 0
         for i in eachindex(configurations)
@@ -146,6 +151,7 @@ module Helper
         return total_time
     end
 
+    #Forward graph search
     function shortest_time_by_sequence(graph::Array{Float64, 6}, sequence::Vector{Int64})
         num_headings = size(graph,5)
         num_speeds = size(graph, 3)

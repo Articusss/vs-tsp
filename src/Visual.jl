@@ -2,16 +2,6 @@ module Visual
     import Plots as plt
     using ..AcceleratedDubins
 
-    function plot_dubins_curve(path)
-        confx, confy = AcceleratedDubins.sample_path(path)
-        plt.plot(confx, confy)
-    end
-
-    function plot_speeds(path, max_min_speed, initial_final_speeds)
-        times, speeds = AcceleratedDubins.speed_profile(path, max_min_speed, initial_final_speeds)
-        plt.plot(times, speeds)
-    end
-
     function plot_full_path(positions, paths)
         p = plt.scatter([x[1] for x in positions], [x[2] for x in positions])
 
